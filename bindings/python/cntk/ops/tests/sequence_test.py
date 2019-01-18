@@ -172,6 +172,23 @@ def test_sequence_softmax():
   expected = np_softmax(a, 1)
   assert np.allclose(val, expected)
 
+def test_sequence_past_future_delay_value():
+    v = C.sequence.input_variable(shape=(2))
+    seq_data = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float32)
+    future_seq_data = np.array([[2.0, 2.0], [3.0, 3.0], [0.0, 0.0]], dtype=np.float32)
+    past_seq_data = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]], dtype=np.float32)
+
+    future_v = C.sequence.future_value(v, initial_state=0)
+    past_v = C.sequence.past_value(v, initial_state=0)
+
+    assert np.allclose(future_v.eval({v: seq_data}), future_seq_data)
+    assert np.allclose(past_v.eval({v: seq_data}), past_seq_data)
+
+    future_v = C.sequence.delay(v, initial_state=0, time_step=-1)
+    past_v = C.sequence.delay(v, initial_state=0, time_step=1)
+
+    assert np.allclose(future_v.eval({v: seq_data}), future_seq_data)
+    assert np.allclose(past_v.eval({v: seq_data}), past_seq_data)
 
 def test_sequence_max_with_variable_lengths():
     np.random.seed(0)
@@ -482,6 +499,18 @@ def test_op_gather_sparse(device_id):
     assert np.array_equal(res, [[[0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 0, 1]], [[0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 1, 0]], [[1, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0]]])
 
 
+def test_op_gather_grad(device_id):
+    dim = 10
+    ii = C.sequence.input_variable(())
+    param = C.parameter((dim, 1), init=np.reshape(np.arange(dim), (dim,1)).astype(np.float32))
+    ss = C.gather(param, ii)
+    data = [[0], [0,1,2], [1,2,3,4,5, 6]]
+    grad1 = ss.grad(data, wrt=[param])
+    ss2 = C.times(C.one_hot(ii, num_classes=dim, sparse_output=False), param)
+    grad2 = ss2.grad(data, wrt=[param])
+    assert np.array_equal(grad1, grad2)
+
+
 def test_op_scatter_sparse(device_id):
     input_sparse_indices = [[1, 3, 5, 5], [2, 4], [0, 2]]
     vocab_size = 6
@@ -569,3 +598,37 @@ def test_sequence_unpack_without_primary_output(device_id, precision):
 
     actual = bvm.eval({x: x1})
     assert np.allclose(actual, expected)
+
+def test_sequence_step_function_scalar_shape_inferrence():
+    hidden_dim = 3
+    in_dim = 5
+    x = C.sequence.input_variable((in_dim,))
+    r = C.sequence.input_variable((1,)) # value of 0/1. 0 means reset
+    merged_x = C.splice(x, r) # Recurrence only takes 1 input, so concatenate the two
+    cell = C.layers.LSTM(hidden_dim) # (dh, dc, x) -> (h, c)
+    y = C.layers.Recurrence(cell)(x)
+
+    @C.Function
+    def lstm_with_reset(dh, dc, xr):
+        xx = xr[0:-1]
+        rr = xr[-1]
+        return cell(rr * dh, rr * dc, xx)
+
+    yr = C.layers.Recurrence(lstm_with_reset)(merged_x)
+
+    seq_len = [2,3,5]
+    total_len = np.sum(seq_len)
+    accum_seq_len = np.cumsum(seq_len)
+
+    x_total_data = np.random.rand(1, total_len, in_dim).astype(np.float32)
+    x_data = [np.squeeze(v) for v in np.split(x_total_data, accum_seq_len[0:-1], axis=1)]
+
+    r_data = np.ones(accum_seq_len[-1])
+    for i in np.nditer(accum_seq_len[0:-1]):
+        r_data[i] = 0
+    r_data = np.reshape(r_data, (-1,1)).astype(np.float32)
+
+    v1 = y.eval(x_data)
+    v2 = yr.eval({x:x_total_data, r:r_data})
+
+    assert np.allclose(np.concatenate(v1), v2[0])

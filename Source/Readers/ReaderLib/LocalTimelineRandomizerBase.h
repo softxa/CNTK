@@ -24,11 +24,6 @@ namespace CNTK {
 class LocalTimelineRandomizerBase : public SequenceEnumerator
 {
 public:
-    LocalTimelineRandomizerBase(
-        DataDeserializerPtr deserializer,
-        bool multithreadedGetNextSequences = false,
-        size_t maxNumberOfInvalidSequences= 0); // per worker
-
     virtual void StartEpoch(const EpochConfiguration& config) override;
 
     void SetConfiguration(const ReaderConfiguration& config) override
@@ -47,6 +42,12 @@ public:
     void SetState(const std::map<std::wstring, size_t>& state) override;
 
 protected:
+    LocalTimelineRandomizerBase(
+        DataDeserializerPtr deserializer,
+        const std::map<std::wstring, size_t>& initialState,
+        bool multithreadedGetNextSequences = false,
+        size_t maxNumberOfInvalidSequences = 0); // per worker
+
     // Struct that describes a window of sequences
     // that are currently processed.
     struct SequenceWindow
@@ -90,10 +91,15 @@ protected:
         return it->second;
     }
 
-    ~LocalTimelineRandomizerBase()
+    void StopPrefetch()
     {
         if (m_prefetch.valid())
             m_prefetch.wait_for(std::chrono::seconds(60));
+    }
+
+    ~LocalTimelineRandomizerBase()
+    {
+        StopPrefetch();
     }
 
     const static SequenceInfo s_endOfSweep; // Marker indicating end of the sweep.
@@ -111,6 +117,9 @@ protected:
 private:
     // Refills the current window of sequences.
     void Refill();
+
+    // Refill and wait for data. Does not issue the next async refill.
+    void RefillCurrentWindowNow();
 
     // Gets next sequences not exceeding localSampleCount for this worker and globalSampleCount across workers.
     void GetNextSequenceDescriptions(size_t maxSampleCount, Sequences& result);

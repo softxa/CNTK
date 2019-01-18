@@ -10,7 +10,7 @@ import numpy
 
 abs_path = os.path.dirname(os.path.abspath(__file__))
 notebook = os.path.join(abs_path, "..", "..", "..", "..", "Tutorials", "CNTK_202_Language_Understanding.ipynb")
-# Runs on GPU only, batch normalization training on CPU is not yet implemented.
+# Runs on GPU only for speed
 notebook_deviceIdsToRun = [0]
 notebook_timeoutSeconds = 900
 
@@ -25,7 +25,7 @@ def test_cntk_202_language_understanding_trainerror(nb):
     for cell in nb.cells:
         try:
            if cell.cell_type == 'code':
-               m = re.search('Finished Evaluation.* metric = (?P<metric>\d+\.\d+)%', cell.outputs[0]['text'])
+               m = re.search(r'Finished Evaluation.* metric = (?P<metric>\d+\.\d+)%', cell.outputs[0]['text'])
                if m:
                    metrics.append(float(m.group('metric')))
         except IndexError:

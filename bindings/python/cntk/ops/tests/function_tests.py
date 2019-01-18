@@ -9,6 +9,7 @@ Unit tests for the function class.
 """
 
 import numpy as np
+import os
 import pytest
 import cntk as C
 from .ops_test_utils import compare_lists_of_np_arrays, AA, cntk_device
@@ -531,6 +532,23 @@ def test_set_rng_seed_attribute():
     random_sample_node.set_attribute(key, 2**31)
     assert root.attributes[key] == 2**31
 
+    
+def test_custom_attributes(tmpdir):
+    root = 0 + C.input_variable(())
+    assert not root.custom_attributes.keys()
+    root.custom_attributes['cleared'] = 'none'
+    assert 'none' == root.custom_attributes['cleared']
+    # replace the custom attributes entirely, so 'cleared' is dropped
+    root.custom_attributes = {'test':'abc', 'dict':{'a':1, 'b':2}, 'list':[1,2,3]}
+    root.custom_attributes['test2'] = 'def'
+    model_file = os.path.join(str(tmpdir), 'custom_attr.dnn')
+    root.save(model_file)
+    root2 = C.load_model(model_file)
+    assert 'abc' == root2.custom_attributes['test']
+    assert {'a':1, 'b':2} == root2.custom_attributes['dict']
+    assert [1,2,3]==root2.custom_attributes['list']
+    assert 'def' == root2.custom_attributes['test2']
+
 
 def test_clone_with_different_dynamic_axes():
     q_axis = C.Axis('q')
@@ -540,3 +558,61 @@ def test_clone_with_different_dynamic_axes():
 
     rnn = C.layers.Recurrence(C.layers.LSTM(5))(question_input)
     rnn_cloned = rnn.clone(C.CloneMethod.share, {question_input:answer_input})
+
+
+def test_clone_with_deep_rnn_chaining():
+    def seq_op_func(seqinp):
+        l = seqinp
+        r = C.sequence.future_value(l)
+        r = C.expand_dims(r, -len(seqinp.shape) - 1)
+        res = l + r
+        return res
+
+    def rnn_seq(features):
+        step_func = C.layers.GRU(1)
+        seq = C.layers.Recurrence(step_func)(features)
+        return seq
+
+    feat = C.sequence.input_variable((40,), name='sequence_inp')
+    c1 = rnn_seq(feat)
+    seq_op_res = seq_op_func(c1)
+    net = rnn_seq(seq_op_res)
+    cloned = net.clone('freeze')
+
+
+def test_clone_with_unfound_new_node():
+    x = C.input_variable(())
+    y = C.combine(x * x, x + x)
+    y0 = y[0]
+    y1 = y[1]
+    y0_new = C.plus(y0,0, name="test")
+    X=C.logging.find_by_name(y0_new, 'QueryReply_y')
+    
+    with pytest.raises(AttributeError):
+        y_clone = y.clone(C.CloneMethod.share, {y0:y0_new, y1:X})
+
+
+def test_clone_with_unfound_previous_node():
+    x = C.input_variable(())
+    y = C.combine(x * x, x + x)
+    y0 = y[0]
+    y1 = y[1]
+    y0_new = C.plus(y0,0, name="test")
+    X=C.logging.find_by_name(y0_new, 'QueryReply_y')
+    
+    with pytest.raises(AttributeError):
+        y_clone = y.clone(C.CloneMethod.share, {X:y0_new})
+
+
+def test_clone_with_wrong_type_node():
+    x = C.input_variable(())
+    y = C.combine(x * x, x + x)
+    y0 = y[0]
+    y1 = y[1]
+    y0_new = C.plus(y0,0, name="test")
+    X=C.logging.find_by_name(y0_new, 'QueryReply_y')
+
+    a = 5
+    
+    with pytest.raises(TypeError):
+        y_clone = y.clone(C.CloneMethod.share, {y0:a})

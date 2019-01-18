@@ -91,7 +91,7 @@
 
 // temaplate definitions
 #ifdef SWIGCSHARP
-// char/int/bool/double/float are already enabled with SWIG_STD_VECTOR_ENHANCED in std_vector.i
+// unsigned char/char/int/bool/double/float are already enabled with SWIG_STD_VECTOR_ENHANCED in std_vector.i
 SWIG_STD_VECTOR_ENHANCED(size_t)
 SWIG_STD_VECTOR_ENHANCED(std::shared_ptr<CNTK::NDArrayView>)
 SWIG_STD_VECTOR_ENHANCED(CNTK::Variable)
@@ -131,6 +131,8 @@ SWIG_STD_VECTOR_ENHANCED(CNTK::Learner)
 %shared_ptr(CNTK::DistributedLearner);
 %shared_ptr(CNTK::Trainer);
 %shared_ptr(CNTK::MinibatchSource);
+%shared_ptr(CNTK::Evaluator);
+%template(UnsignedCharVector) std::vector<unsigned char>;
 %template(DictionaryVector) std::vector<CNTK::Dictionary>;
 %template (UnorderedMapStreamInformationMinibatchData) std::unordered_map<CNTK::StreamInformation, CNTK::MinibatchData>;
 %template(UnorderedMapVariableMinibatchData) std::unordered_map<CNTK::Variable, CNTK::MinibatchData>;
@@ -144,6 +146,8 @@ SWIG_STD_VECTOR_ENHANCED(CNTK::Learner)
 %template(UnorderedMapStreamInformationPairNDArrayViewPtrNDArrayViewPtr) std::unordered_map<CNTK::StreamInformation, std::pair<std::shared_ptr<CNTK::NDArrayView>, std::shared_ptr<CNTK::NDArrayView>>>;
 %template(ProgressWriterVector) std::vector<std::shared_ptr<CNTK::ProgressWriter>>;
 %template(LearnerVector) std::vector<std::shared_ptr<CNTK::Learner>>;
+%template(VariablePair) std::pair<CNTK::Variable, CNTK::Variable>;
+%template(VariablePairVector) std::vector<std::pair<CNTK::Variable, CNTK::Variable>>;
 %template(UnorderedMapStringDictionaryValue) std::unordered_map<std::wstring, CNTK::DictionaryValue>;
 %template(PairSizeTDouble) std::pair<size_t, double>;
 %template(VectorPairSizeTDouble) std::vector<std::pair<size_t, double>>;
@@ -194,7 +198,6 @@ IGNORE_FUNCTION CNTK::Function::Backward;
 IGNORE_FUNCTION CNTK::Function::Forward;
 IGNORE_FUNCTION CNTK::Function::Serialize;
 IGNORE_FUNCTION CNTK::Function::Deserialize;
-IGNORE_FUNCTION CNTK::Function::BlockArgumentsMapping;
 IGNORE_FUNCTION CNTK::Function::Function;
 IGNORE_FUNCTION CNTK::Function::RestoreFromCheckpoint;
 IGNORE_FUNCTION CNTK::Function::Gradients;
@@ -233,8 +236,6 @@ IGNORE_CLASS CNTK::DistributedLearner;
 IGNORE_FUNCTION CNTK::CreateDataParallelDistributedLearner;
 IGNORE_FUNCTION CNTK::CreateQuantizedDataParallelDistributedLearner;
 IGNORE_FUNCTION CNTK::CreateBlockMomentumDistributedLearner;
-IGNORE_CLASS CNTK::Evaluator;
-IGNORE_FUNCTION CNTK::CreateEvaluator;
 IGNORE_STRUCT std::hash<::CNTK::StreamInformation>;
 %ignore operator==(const StreamInformation& left, const StreamInformation& right);
 IGNORE_STRUCT CNTK::DistributedWorkerDescriptor;
@@ -287,11 +288,8 @@ IGNORE_FUNCTION CNTK::Internal::SetComputationNetworkTraceLevel;
 IGNORE_FUNCTION CNTK::Internal::GetComputationNetworkTraceLevel;
 IGNORE_FUNCTION CNTK::Internal::SetGPUMemoryAllocationTraceLevel;
 IGNORE_FUNCTION CNTK::Internal::ForceSynchronousCUDAKernelExecutions;
-IGNORE_FUNCTION CNTK::Internal::ForceDeterministicAlgorithms;
-IGNORE_FUNCTION CNTK::Internal::ShouldForceDeterministicAlgorithms;
 IGNORE_FUNCTION CNTK::Internal::EnableSynchronousGPUKernelExecution;
 IGNORE_FUNCTION CNTK::Internal::IsSynchronousGPUKernelExecutionEnabled;
-IGNORE_FUNCTION CNTK::Internal::SetFixedRandomSeed;
 IGNORE_FUNCTION CNTK::Internal::EnableForwardValuesSharing;
 IGNORE_FUNCTION CNTK::Internal::DisableForwardValuesSharing;
 IGNORE_FUNCTION CNTK::Internal::EnableGradientAccumulationOptimization;
@@ -301,11 +299,14 @@ IGNORE_FUNCTION CNTK::Internal::StartProfiler;
 IGNORE_FUNCTION CNTK::Internal::StopProfiler;
 IGNORE_FUNCTION CNTK::Internal::EnableProfiler;
 IGNORE_FUNCTION CNTK::Internal::DisableProfiler;
+IGNORE_FUNCTION CNTK::Internal::EnableNodeTiming;
+IGNORE_FUNCTION CNTK::Internal::DisableNodeTiming;
 IGNORE_FUNCTION CNTK::Internal::AreEquivalent;
 IGNORE_FUNCTION CNTK::Internal::AreEqual;
 IGNORE_FUNCTION CNTK::Internal::PrintBuiltInfo;
 IGNORE_FUNCTION CNTK::Internal::PrintGpuInfo;
-IGNORE_FUNCTION CNTK::Internal::DefaultPackThresholdSizeInBytes;
+IGNORE_FUNCTION CNTK::Internal::SetMPIPackThreshold;
+IGNORE_FUNCTION CNTK::Internal::GetMPIPackThreshold;
 IGNORE_FUNCTION CNTK::Internal::ToDictionary;
 IGNORE_CLASS CNTK::Internal::TensorBoardFileWriter;
 // suppress SWIG warning 302: Identifier redefined.
@@ -329,7 +330,6 @@ RENAME_AND_MAKE_PRIVATE(CNTK::DeviceDescriptor, AllDevices);
 MAKE_GETTER(CNTK::Axis, Name);
 
 // class Function
-IGNORE_FUNCTION CNTK::Function::BlockArgumentsMapping;
 IGNORE_FUNCTION CNTK::GetCorrespondingOutputVariableFromClone;
 IGNORE_FUNCTION CNTK::Function::RegisterUDFDeserializeCallback;
 IGNORE_FUNCTION CNTK::Function::GetUDFDeserializeCallback;
@@ -428,18 +428,21 @@ IGNORE_FUNCTION CNTK::Function::Placeholders;
 IGNORE_FUNCTION CNTK::Function::PrintGraph;
 IGNORE_FUNCTION CNTK::Function::Constants;
 IGNORE_FUNCTION CNTK::Function::Attributes;
+IGNORE_FUNCTION CNTK::Function::BlockArgumentsMapping;
 IGNORE_CLASS CNTK::Parameter;
 IGNORE_CLASS CNTK::Constant;
 IGNORE_ENUM_CLASS CNTK::PoolingType;
 IGNORE_FUNCTION CNTK::Negate;
 IGNORE_FUNCTION CNTK::Sigmoid;
 IGNORE_FUNCTION CNTK::Tanh;
+IGNORE_FUNCTION CNTK::Atanh;
 IGNORE_FUNCTION CNTK::Sin;
 IGNORE_FUNCTION CNTK::Cos;
 IGNORE_FUNCTION CNTK::Acos;
 IGNORE_FUNCTION CNTK::Asin;
 IGNORE_FUNCTION CNTK::Cosh;
 IGNORE_FUNCTION CNTK::Sinh;
+IGNORE_FUNCTION CNTK::Asinh;
 IGNORE_FUNCTION CNTK::ReLU;
 IGNORE_FUNCTION CNTK::Exp;
 IGNORE_FUNCTION CNTK::Log;
@@ -476,6 +479,7 @@ IGNORE_FUNCTION CNTK::BinaryCrossEntropy;
 IGNORE_FUNCTION CNTK::WeightedBinaryCrossEntropy;
 IGNORE_FUNCTION CNTK::SquaredError;
 IGNORE_FUNCTION CNTK::CrossEntropyWithSoftmax;
+IGNORE_FUNCTION CNTK::LatticeSequenceWithSoftmax;
 IGNORE_FUNCTION CNTK::EditDistanceError;
 IGNORE_FUNCTION CNTK::ForwardBackward;
 IGNORE_FUNCTION CNTK::LabelsToGraph;
@@ -526,6 +530,7 @@ IGNORE_FUNCTION CNTK::CTFDeserializer;
 IGNORE_FUNCTION CNTK::CBFDeserializer;
 IGNORE_FUNCTION CNTK::HTKFeatureDeserializer;
 IGNORE_FUNCTION CNTK::HTKMLFDeserializer;
+IGNORE_FUNCTION CNTK::LatticeDeserializer;
 IGNORE_FUNCTION CNTK::MomentumAsTimeConstantSchedule;
 IGNORE_CLASS CNTK::TrainingParameterSchedule;
 IGNORE_STRUCT CNTK::AdditionalLearningOptions;
@@ -655,6 +660,7 @@ MAKE_GETTER(CNTK::Axis, StaticAxisIndex);
 %ignore CNTK::Value::CreateSequenceDouble(size_t dimension, size_t sequenceLength, const CNTK::SparseIndexType* colStarts, const CNTK::SparseIndexType* rowIndices, const double* nonZeroValues, size_t numNonZeroValues, bool sequenceStartFlag, const CNTK::DeviceDescriptor& device, bool readOnly = false);
 %rename (isSparse) CNTK::NDArrayView::IsSparse;
 %rename (isReadOnly) CNTK::NDArrayView::IsReadOnly;
+%rename (isSliceView) CNTK::NDArrayView::IsSliceView;
 %rename (alias) CNTK::NDArrayView::Alias;
 %rename (sliceView) CNTK::NDArrayView::SliceView;
 %rename (getDataType) CNTK::NDArrayView::GetDataType;
@@ -665,6 +671,8 @@ MAKE_GETTER(CNTK::Axis, StaticAxisIndex);
 %rename (copyFrom) CNTK::NDArrayView::CopyFrom;
 %rename (changeDevice) CNTK::NDArrayView::ChangeDevice;
 %rename (toString) CNTK::NDArrayView::AsString;
+IGNORE_CLASS CNTK::Evaluator;
+IGNORE_FUNCTION CNTK::CreateEvaluator;
 #else
 %rename(SequenceIsFirst) CNTK::Sequence::IsFirst;
 %rename(SequenceIsLast) CNTK::Sequence::IsLast;
@@ -731,6 +739,7 @@ RENAME_AND_MAKE_PRIVATE(CNTK::Function, Save);
 RENAME_AND_MAKE_PRIVATE(CNTK::Function, Clone);
 RENAME_AND_MAKE_PRIVATE(CNTK::Function, Evaluate);
 RENAME_AND_MAKE_PRIVATE(CNTK::Function, FindByName);
+RENAME_AND_MAKE_PRIVATE(CNTK::Trainer, TrainMinibatch);
 // Customize type mapping for modelBuffer, used by Load
 %typemap(ctype) (char* buffer) "char*"
 %typemap(imtype) (char* buffer) "byte[]"
@@ -781,6 +790,7 @@ RENAME_AND_MAKE_PRIVATE(CNTK::Constant, ScalarDouble);
 %apply int OUTPUT[]  { int *numNonZeroValues }
 RENAME_AND_MAKE_PRIVATE(CNTK::NDArrayView, IsSparse);
 RENAME_AND_MAKE_PRIVATE(CNTK::NDArrayView, IsReadOnly);
+RENAME_AND_MAKE_PRIVATE(CNTK::NDArrayView, IsSliceView);
 RENAME_AND_MAKE_PRIVATE(CNTK::NDArrayView, Alias);
 RENAME_AND_MAKE_PRIVATE(CNTK::NDArrayView, SliceView);
 RENAME_AND_MAKE_PRIVATE(CNTK::NDArrayView, GetDataType);
@@ -792,6 +802,9 @@ RENAME_AND_MAKE_PRIVATE(CNTK::NDArrayView, RandomUniformDouble);
 // define typemap for dataBuffer
 %apply float INPUT[]  { float *dataBuffer }
 %apply double INPUT[]  { double *dataBuffer }
+
+// ProgressWriters returns unordered_set which is not supportted by swig CCharp
+IGNORE_FUNCTION CNTK::Evaluator::ProgressWriters;
 #endif
 
 %include "CNTKValueExtend.i"

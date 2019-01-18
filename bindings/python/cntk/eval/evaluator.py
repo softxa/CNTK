@@ -35,7 +35,7 @@ class Evaluator(cntk_py.Evaluator):
         # transplant into this class instance
         self.__dict__ = evaluator.__dict__
 
-    def test_minibatch(self, arguments, device=None):
+    def test_minibatch(self, arguments, device=None, distributed=False):
         '''
         Test the evaluation function on the specified batch of samples.
 
@@ -60,6 +60,8 @@ class Evaluator(cntk_py.Evaluator):
             device (:class:`~cntk.device.DeviceDescriptor`): the device descriptor that
              contains the type and id of the device on which the computation is
              to be performed.
+            distributed (`bool`, optional): flag indicating if evaluation results should
+             be aggregated across workers.
 
         Note:
              See :meth:`~cntk.ops.functions.Function.forward` for examples on
@@ -73,7 +75,7 @@ class Evaluator(cntk_py.Evaluator):
             device = use_default_device()
 
         arguments = sanitize_var_map(tuple(self.evaluation_function.arguments), arguments)
-        return super(Evaluator, self).test_minibatch(arguments, device)
+        return super(Evaluator, self).test_minibatch(arguments, device, distributed)
         
     @property
     @typemap
@@ -89,3 +91,10 @@ class Evaluator(cntk_py.Evaluator):
         accumulators.
         '''
         return super(Evaluator, self).summarize_test_progress()
+
+    def print_node_timing(self):
+        '''
+        Prints per-node average timing per-minibatch for each primitive function
+        statistics would reset after print
+        '''
+        return super(Evaluator, self).print_node_timing()

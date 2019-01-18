@@ -51,6 +51,11 @@ namespace Microsoft { namespace MSR { namespace CNTK {
 MATH_API void SetMathLibTraceLevel(int traceLevel);
 MATH_API int GetMathLibTraceLevel();
 
+inline bool IsGpu(DEVICEID_TYPE deviceId)
+{
+    return deviceId > CPUDEVICE;
+}
+
 class MATH_API TracingGPUMemoryAllocator
 {
 private:
@@ -90,9 +95,10 @@ enum ElementWiseOperator
     // unary (or binary with constant parameter)
     opCopy,
     opNegate, opNot, opAbs, opFloor, opReciprocal,
-    opSigmoid, opTanh, opSqr, opSqrt, opExp, opLog, opLinearRectifier, opCosine, opSin, opAcos, opAsin, opCosh, opSinh, opExponentialLinearUnit, opStableSigmoid,
+    opSigmoid, opTanh, opAtanh, opSqr, opSqrt, opExp, opLog, opLinearRectifier,
+    opCosine, opSin, opTan, opAcos, opAsin, opAtan, opCosh, opSinh, opAsinh, opExponentialLinearUnit, opStableSigmoid, opStraightThrough,
     // unary ops for use by Matrix class only (there is no TensorView implementation)
-    opSigmoidDerivative, opLinearRectifierDerivative, opNegativeSine, opExponentialLinearUnitDerivative, opStableSigmoidDerivative,
+    opSigmoidDerivative, opLinearRectifierDerivative, opNegativeSine, opExponentialLinearUnitDerivative, opStableSigmoidDerivative, opStraightThroughDerivative,
     // binary
     opCopyIf, opCopyIfNot, opSum, opDifference, opElementwiseProduct, opElementwiseQuotient, opLogSum, opPow,
     opMax, opMin, opArgmax, opArgmin,
@@ -100,12 +106,14 @@ enum ElementWiseOperator
     opAnd, opOr, opXor, opMaskNegative,
     opElementwiseProductWithSigmoidDerivativeFromOutput, opElementwiseProductWithTanhDerivativeFromOutput,
     opElementwiseProductWithLinearRectifierDerivativeFromOutput, opElementwiseProductWithLogDerivativeFromOutput,
-    opElementwiseProductWithCosDerivative, opElementwiseProductWithSinDerivative,
-    opElementwiseProductWithAcosDerivative, opElementwiseProductWithAsinDerivative,
+    opElementwiseProductWithCosDerivative, opElementwiseProductWithSinDerivative, opElementwiseProductWithTanDerivative,
+    opElementwiseProductWithAcosDerivative, opElementwiseProductWithAsinDerivative, opElementwiseProductWithAtanDerivative,
     opElementwiseProductWithCoshDerivative, opElementwiseProductWithSinhDerivative,
+    opElementwiseProductWithAtanhDerivative, opElementwiseProductWithAsinhDerivative,
     opElementwiseProductWithAbsDerivative, opElementwiseProductWithSqrtDerivative,
     opElementwiseProductWithReciprocalDerivative, opSqrOfDifference,
     opElementwiseProductWithExponentialLinearUnitDerivativeFromOutput,
+    opElementwiseProductWithStraightThroughDerivative,
     // binary ops for indexing
     // opIndex,
     // ternary
@@ -133,6 +141,7 @@ enum ElementWiseOperator
     Macro(Reciprocal);            \
     Macro(Sigmoid);               \
     Macro(Tanh);                  \
+    Macro(Atanh);                 \
     Macro(Sqr);                   \
     Macro(Sqrt);                  \
     Macro(Exp);                   \
@@ -140,12 +149,16 @@ enum ElementWiseOperator
     Macro(LinearRectifier);       \
     Macro(Cosine);                \
     Macro(Sin);                   \
+    Macro(Tan);                   \
     Macro(Acos);                  \
     Macro(Asin);                  \
+    Macro(Atan);                  \
     Macro(Cosh);                  \
     Macro(Sinh);                  \
+    Macro(Asinh);                 \
     Macro(ExponentialLinearUnit); \
-    Macro(StableSigmoid);
+    Macro(StableSigmoid);         \
+    Macro(StraightThrough);
 
 #define ForAllBinaryOps(Macro)                                               \
     Macro(CopyIf);                                                           \
@@ -170,19 +183,24 @@ enum ElementWiseOperator
     Macro(MaskNegative);                                                     \
     Macro(ElementwiseProductWithSigmoidDerivativeFromOutput);                \
     Macro(ElementwiseProductWithTanhDerivativeFromOutput);                   \
+    Macro(ElementwiseProductWithAtanhDerivative);                            \
     Macro(ElementwiseProductWithLinearRectifierDerivativeFromOutput);        \
     Macro(ElementwiseProductWithLogDerivativeFromOutput);                    \
     Macro(ElementwiseProductWithCosDerivative);                              \
     Macro(ElementwiseProductWithSinDerivative);                              \
+    Macro(ElementwiseProductWithTanDerivative);                              \
     Macro(ElementwiseProductWithAcosDerivative);                             \
     Macro(ElementwiseProductWithAsinDerivative);                             \
+    Macro(ElementwiseProductWithAtanDerivative);                             \
     Macro(ElementwiseProductWithCoshDerivative);                             \
     Macro(ElementwiseProductWithSinhDerivative);                             \
+    Macro(ElementwiseProductWithAsinhDerivative);                            \
     Macro(ElementwiseProductWithAbsDerivative);                              \
     Macro(ElementwiseProductWithReciprocalDerivative);                       \
     Macro(ElementwiseProductWithSqrtDerivative);                             \
     Macro(SqrOfDifference);                                                  \
-    Macro(ElementwiseProductWithExponentialLinearUnitDerivativeFromOutput);
+    Macro(ElementwiseProductWithExponentialLinearUnitDerivativeFromOutput);  \
+    Macro(ElementwiseProductWithStraightThroughDerivative); 
     //Macro(Index);
 
 #define ForAllTernaryOps(Macro)                         \
@@ -401,7 +419,7 @@ protected:
 
 protected:
     // **************************
-    // Variables requried by all matrices
+    // Variables required by all matrices
     // **************************
     MatrixFormat m_format;
     mutable DEVICEID_TYPE m_computeDevice; // current GPU device Id or CPUDEVICE
@@ -511,6 +529,8 @@ public:
 
     size_t GetNumRows() const { return m_numRows; }
     size_t GetNumCols() const { return m_numCols; }
+    //for non-squared matrix, the major diagonal size is defined by the row or col with smaller dimension
+    size_t GetDiagSize() const { return GetNumRows() < GetNumCols() ? GetNumRows() : GetNumCols(); }
 
 protected:
 

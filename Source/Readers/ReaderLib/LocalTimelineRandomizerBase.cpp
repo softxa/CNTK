@@ -16,6 +16,7 @@ const SequenceInfo LocalTimelineRandomizerBase::s_endOfSweep = { std::numeric_li
 
 LocalTimelineRandomizerBase::LocalTimelineRandomizerBase(
     DataDeserializerPtr deserializer,
+    const std::map<std::wstring, size_t>& initialState,
     bool multithreadedGetNextSequences,
     size_t maxNumberOfInvalidSequences)
 : m_deserializer(deserializer),
@@ -23,7 +24,8 @@ LocalTimelineRandomizerBase::LocalTimelineRandomizerBase(
   m_cleaner(maxNumberOfInvalidSequences),
   m_sweepCount(0),
   m_sampleCount(0),
-  m_originalChunkDescriptions(deserializer->ChunkInfos())
+  m_originalChunkDescriptions(deserializer->ChunkInfos()),
+  m_currentState(initialState)
 {
     if (m_originalChunkDescriptions.empty())
         RuntimeError("The deserializer does not have any data, the number of chunks is 0.");
@@ -49,6 +51,21 @@ void LocalTimelineRandomizerBase::StartEpoch(const EpochConfiguration& config)
     Refill();
 }
 
+void LocalTimelineRandomizerBase::RefillCurrentWindowNow() 
+{
+    m_currentState = GetInnerState();
+
+    // Make sure there is no outstanding prefetch.
+    if (!m_prefetch.valid())
+    {
+        m_prefetch = std::async(std::launch::async, [this]() { Prefetch(); });
+    }
+
+    m_prefetch.get();
+
+    RefillSequenceWindow(m_window);
+}
+
 void LocalTimelineRandomizerBase::Refill()
 {
     // Fill the expandable window.
@@ -66,16 +83,7 @@ void LocalTimelineRandomizerBase::Refill()
     //   - current state of the base class
     //   - state of the inherited class before the current window is asked
     //   - position in current window
-
-    m_currentState = GetInnerState();
-
-    // Make sure there is no outstanding prefetch.
-    if (!m_prefetch.valid())
-        m_prefetch = std::async(std::launch::async, [this]() { Prefetch(); });
-
-    m_prefetch.get();
-
-    RefillSequenceWindow(m_window);
+    RefillCurrentWindowNow();
 
     // Issue the next prefetch
     m_prefetch = std::async(std::launch::async, [this]() { Prefetch(); });
@@ -106,10 +114,16 @@ void LocalTimelineRandomizerBase::GetNextSequenceDescriptions(size_t maxSampleCo
     if (maxSampleCount > std::numeric_limits<int>::max())
         RuntimeError("The size of a minibatch cannot exceed max int.");
 
-    // The underlying randomizer should always fill data,
-    // in case it cannot we report the error.
-    if (m_window.m_sequences.empty()) 
-        RuntimeError("Could not read any data.");
+    // This randomizer operates on the local time-line. So there could be chunks with no data
+    // for all workers. In that case, we return an empty sequences.    
+    if (m_window.m_sequences.empty())
+    {
+        m_sequenceBuffer.clear();
+        m_chunkBuffer.clear();
+        // Set the end-of-epoch flag (true when the current batch is last in an epoch).
+        result.m_endOfEpoch = IsEndReached();
+        return;
+    }
 
     size_t samplesLoaded = 0;
     bool atLeastOneSequenceNeeded = true;
@@ -188,7 +202,13 @@ Sequences LocalTimelineRandomizerBase::GetNextSequences(size_t /*ignoring global
     }
 
     if (m_sequenceBuffer.size() == 0) // No data
+    {
+        // Refill one more chunk, but does not issue the next async prefetch.
+        // If the next chunk has more sequences, then the regular Refill 
+        // will be called inside GetNextSequenceDescriptions method.
+        RefillCurrentWindowNow();
         return result;
+    }
 
     // Lets actually fetch data.
     result.m_data.resize(GetStreamDescriptions().size(), std::vector<SequenceDataPtr>(m_sequenceBuffer.size()));
@@ -237,6 +257,7 @@ std::map<std::wstring, size_t> LocalTimelineRandomizerBase::GetState()
     state[s_sequencePositionProperty] = m_window.m_sequencePosition;
     state[s_numberOfSamplesSeenSoFarProperty] = m_sampleCount;
     size_t originalSize = state.size();
+
     state.insert(m_currentState.begin(), m_currentState.end());
     if (originalSize + m_currentState.size() != state.size())
         LogicError("Key collision during checkpointing. "

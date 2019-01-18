@@ -19,7 +19,7 @@
 #pragma warning(pop)
 
 #pragma warning(push)
-#pragma warning(disable : 4800 4267 4610 4512 4100 4510)
+#pragma warning(disable : 4800 4267 4610 4512 4100 4510 4505)
 #include "tensorboard/tensorboard.pb.h"
 #pragma warning(pop)
 
@@ -28,6 +28,8 @@
 #include "hostname.h"
 #include "tensorboard/TensorBoardUtils.h"
 #include "Utils.h"
+
+using namespace Microsoft::MSR::CNTK;
 
 namespace CNTK
 {
@@ -62,7 +64,7 @@ namespace CNTK
 
             filename << L"events.out.tfevents." 
                 << std::setfill(L'0') << std::setw(10) << time
-                << L"." << ToWString(GetHostName());
+                     << L"." << ToFixedWStringFromMultiByte(GetHostName());
             return filename.str();
         }
 
@@ -95,7 +97,7 @@ namespace CNTK
 
             msra::files::make_intermediate_dirs(filePath);
 
-            m_file = fopenOrDie(ToString(filePath), "wb");
+            m_file = fopenOrDie(ToLegacyString(ToUTF8(filePath)), "wb");
             m_fileName = filePath;
 
             // Write the first record with the current version, and flush
@@ -118,7 +120,7 @@ namespace CNTK
 
             tensorflow::Summary* summary = event.mutable_summary();
             tensorflow::Summary::Value* summaryValue = summary->add_value();
-            summaryValue->set_tag(ToString(name));
+            summaryValue->set_tag(ToLegacyString(ToUTF8(name)));
             summaryValue->set_simple_value(value);
 
             WriteRecord(Serialize(event));
@@ -200,14 +202,12 @@ namespace CNTK
             extent.push_back(width);
             extent.push_back(depth);
             extent.push_back(1);
-            const int compression = -1;
             
             const std::vector<size_t> imageDim({height, width, depth});
-            NDShape imageShape(imageDim);
 
             for (size_t i = 0; i < batch_size; i++) {
                 tensorflow::Summary::Value* summaryValue = summary->add_value();
-                summaryValue->set_tag(ToString(name) + "/image/" + std::to_string(i));
+                summaryValue->set_tag(ToLegacyString(ToUTF8(name)) + "/image/" + std::to_string(i));
 
                 tensorflow::Summary::Image* summaryImage = summaryValue->mutable_image();
                 summaryImage->set_height(height);
@@ -215,20 +215,20 @@ namespace CNTK
                 summaryImage->set_colorspace(depth);
                 start.back() = static_cast<size_t>(i);
                 auto image = imageData->SliceView(start, extent)->AsShape(imageDim);
-                vector<uchar> buffer;
+                vector<unsigned char> buffer;
 
                 switch (dtype)
                 {
                 case DataType::Float:
-                    WriteImageToBuffer(image->WritableDataBuffer<float>(), height, width, CV_32FC(depth), buffer);
+                    WriteImageToBuffer(image->WritableDataBuffer<float>(), dtype, height, width, depth, buffer);
                     break;
                 
                 case DataType::Double:
-                    WriteImageToBuffer(image->WritableDataBuffer<double>(), height, width, CV_64FC(depth), buffer);
+                    WriteImageToBuffer(image->WritableDataBuffer<double>(), dtype, height, width, depth, buffer);
                     break;
 
                 default:
-                    fprintf(stderr, "TensorBoardFileWriter: Unsupported data type: %d ", dtype);
+                    fprintf(stderr, "TensorBoardFileWriter: Unsupported data type: %d ", static_cast<int>(dtype));
                     break;
                 }
 
@@ -238,7 +238,8 @@ namespace CNTK
             
             WriteRecord(Serialize(event));
         }
-#endif
+
+#endif // !CNTK_UWP
 
         void TensorBoardFileWriter::WriteVersion(time_t time)
         {

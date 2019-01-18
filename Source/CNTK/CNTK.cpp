@@ -99,14 +99,6 @@ void RedirectStdErr(wstring logpath, bool appendLogFile = false)
     static auto fKept = f;                // keep it around (until it gets changed)
 }
 
-std::string WCharToString(const wchar_t* wst)
-{
-    std::wstring ws(wst);
-    std::string s(ws.begin(), ws.end());
-    s.assign(ws.begin(), ws.end());
-    return s;
-}
-
 size_t GetMaxEpochs(const ConfigParameters& configParams)
 {
     ConfigParameters configSGD(configParams("SGD"));
@@ -419,7 +411,7 @@ int wmainWithBS(int argc, wchar_t* argv[]) // called from wmain which is a wrapp
 
     // startup message
     // In case of a redirect of stderr, this will be printed twice, once upfront, and once again after the redirect so that it goes into the log file
-    wstring startupMessage = msra::strfun::wstrprintf(L"running on %ls at %ls\n", msra::strfun::utf16(GetHostName()).c_str(), msra::strfun::utf16(TimeDateStamp()).c_str());
+    wstring startupMessage = msra::strfun::wstrprintf(L"running on %ls at %ls\n", Microsoft::MSR::CNTK::ToFixedWStringFromMultiByte(GetHostName()).c_str(), Microsoft::MSR::CNTK::ToFixedWStringFromMultiByte(TimeDateStamp()).c_str());
     startupMessage += msra::strfun::wstrprintf(L"command line: %ls", exePath.c_str());
     for (const auto& arg : args)
         startupMessage += L"  " + arg;
@@ -597,7 +589,11 @@ int wmainWithBS(int argc, wchar_t* argv[]) // called from wmain which is a wrapp
 
 static void PrintBanner(int argc, wchar_t* argv[], const string& timestamp)
 {
-    fprintf(stderr, "CNTK 2.2+ (");
+#ifndef CNTK_VERSION_BANNER
+#error CNTK_VERSION_BANNER must be set
+#endif
+#define MACRO_TO_STRING(s) #s
+    fprintf(stderr, "CNTK %s (", MACRO_TO_STRING(CNTK_VERSION_BANNER));
 #ifdef _GIT_EXIST
     fprintf(stderr, "%s %.6s, ", _BUILDBRANCH_, _BUILDSHA1_);
 #endif

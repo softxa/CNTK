@@ -21,13 +21,16 @@ def test_convolution_attributes():
     d = f.root_function.attributes
     expected = {'autoPadding': [False, False, False], 
         'sharing': [True, True, True], 
+        'groups': 1,
         'strides': (1, 1, 1), 
         'dilation': (1, 1, 1),
         'maxTempMemSizeInSamples': 0, 
         'upperPad': (0, 0, 0), 
         'lowerPad': (0, 0, 0),
         'transpose': False,
-        'outputShape': (0,)
+        'outputShape': (0,),
+        'kernelShape': (1, 2, 2),
+        'sequential': False
         }
     _check(expected, d)
 
@@ -35,13 +38,16 @@ def test_convolution_attributes():
     d = f.root_function.attributes
     expected = {'autoPadding': [False, False, True], 
         'sharing': [True, True, True], 
+        'groups': 1,
         'strides': (1, 1, 1),
         'dilation': (1, 1, 1),
         'maxTempMemSizeInSamples': 0, 
         'upperPad': (0, 0, 0), 
         'lowerPad': (0, 0, 0),
         'transpose': False,
-        'outputShape': (0,)
+        'outputShape': (0,),
+        'kernelShape': (1, 2, 2),
+        'sequential': False
         }
     _check(expected, d)
 
@@ -53,13 +59,16 @@ def test_convolution_transpose_attributes():
     d = f.root_function.attributes
     expected = {'autoPadding': [False, False, False], 
         'sharing': [True, True, True], 
+        'groups': 1,
         'strides': (1, 1, 1),
         'dilation': (1, 1, 1),
         'maxTempMemSizeInSamples': 0, 
         'upperPad': (0, 0, 0), 
         'lowerPad': (0, 0, 0),
         'transpose': True,
-        'outputShape': (0,)
+        'outputShape': (0,),
+        'kernelShape': (1, 2, 2),
+        'sequential': False
         }
     _check(expected, d)
 

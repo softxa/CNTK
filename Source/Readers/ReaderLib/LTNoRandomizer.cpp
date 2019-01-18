@@ -8,15 +8,25 @@
 
 namespace CNTK {
 
+// Properties used in the checkpoint.
+const static std::wstring s_currentChunkPositionProperty = L"currentChunkPosition";
+const static std::wstring s_currentSequencePositionProperty = L"currentSequencePosition";
+
 LTNoRandomizer::LTNoRandomizer(DataDeserializerPtr deserializer, bool multithreadedGetNextSequences, size_t maxNumberOfInvalidSequences)
-: Base(deserializer, multithreadedGetNextSequences, maxNumberOfInvalidSequences),
-  m_currentChunkPosition(0),
-  m_currentSequencePosition(0)
+    : Base(deserializer, { { s_currentChunkPositionProperty, 0 }, { s_currentSequencePositionProperty, 0} }, multithreadedGetNextSequences, maxNumberOfInvalidSequences),
+      m_currentChunkPosition(0),
+      m_currentSequencePosition(0)
 {
+}
+
+LTNoRandomizer::~LTNoRandomizer()
+{
+    StopPrefetch();
 }
 
 void LTNoRandomizer::Prefetch() const
 {
+
     auto chunkId = m_originalChunkDescriptions[m_currentChunkPosition].m_id;
     m_prefetchedChunk.m_info = m_originalChunkDescriptions[m_currentChunkPosition];
     m_prefetchedChunk.m_data = m_deserializer->GetChunk(chunkId);
@@ -41,7 +51,7 @@ void LTNoRandomizer::RefillSequenceWindow(SequenceWindow& window)
                 std::swap(window.m_sequences[workerSequencePosition++], window.m_sequences[i]);
         }
 
-        window.m_sequences.erase(window.m_sequences.begin() + workerSequencePosition);
+        window.m_sequences.erase(window.m_sequences.begin() + workerSequencePosition, window.m_sequences.end());
     }
 
     // If last chunk, add the sweep marker.
@@ -54,10 +64,6 @@ void LTNoRandomizer::RefillSequenceWindow(SequenceWindow& window)
     // Moving to the next chunk.
     m_currentChunkPosition = (m_currentChunkPosition + 1) % m_originalChunkDescriptions.size();
 }
-
-// Properties used in the checkpoint.
-const static std::wstring s_currentChunkPositionProperty = L"currentChunkPosition";
-const static std::wstring s_currentSequencePositionProperty = L"currentSequencePosition";
 
 std::map<std::wstring, size_t> LTNoRandomizer::GetInnerState()
 {

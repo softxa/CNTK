@@ -3,7 +3,19 @@
 # for full license information.
 # ==============================================================================
 
-__version__ = '2.2+'
+import os
+os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(__file__), 'libs')
+
+# Read version information
+version_file = open(os.path.join(os.path.dirname(__file__), 'VERSION'), 'r')
+__version__ = version_file.read()
+version_file.close()
+del version_file
+
+# Test minimum requirements before running
+from . import cntk_py_init
+cntk_py_init.cntk_check_distro_info()
+cntk_py_init.cntk_check_libs()
 
 import numpy as np
 

@@ -300,6 +300,7 @@ void SGD<ElemType>::TrainOrAdaptModel(int startEpoch, ComputationNetworkPtr net,
     {
         // SequenceWithSoftmaxNode<ElemType>* node = static_cast<SequenceWithSoftmaxNode<ElemType>*>(criterionNodes[0]);
         auto node = dynamic_pointer_cast<SequenceWithSoftmaxNode<ElemType>>(criterionNodes[0]);
+
         auto hmm = node->gethmm();
         trainSetDataReader->GetHmmData(hmm);
     }
@@ -349,7 +350,7 @@ void SGD<ElemType>::TrainOrAdaptModel(int startEpoch, ComputationNetworkPtr net,
         smoothedCounts.push_back(0);
         if (node->IsParameterUpdateRequired())
         {
-            nodesToUpdateDescriptions.push_back(node->NodeDescription() + L" : [" + msra::strfun::utf16(string(node->GetSampleLayout())) + L"]");
+            nodesToUpdateDescriptions.push_back(node->NodeDescription() + L" : [" + Microsoft::MSR::CNTK::ToFixedWStringFromMultiByte(string(node->GetSampleLayout())) + L"]");
             numParameters += node->GetSampleLayout().GetNumElements();
         }
     }
@@ -620,7 +621,7 @@ void SGD<ElemType>::TrainOrAdaptModel(int startEpoch, ComputationNetworkPtr net,
         }
 
         // For legacy readers, in BPTT mode the minibatch size was not the real minibatch size but truncation.
-        // Because of that we have to fix up the real minibatch size multiplying the number of parallel sequences by the truncation lenght.
+        // Because of that we have to fix up the real minibatch size multiplying the number of parallel sequences by the truncation length.
         // This is not require any more for the new readers.
         if (trainSetDataReader->IsLegacyReader())
             actualMinibatchSize = FixUpEffectiveMBSize(chosenMinibatchSize /*BUGBUG workaround:*/, trainSetDataReader->GetNumParallelSequencesForFixingBPTTMode());
@@ -2227,7 +2228,7 @@ void SGD<ElemType>::TrainOneMiniEpochAndReloadModel(ComputationNetworkPtr net,
                        /*out*/ dummyMinibatchSize);
 }
 
-// Attemps to compute the error signal for the whole utterance, which will
+// Attempts to compute the error signal for the whole utterance, which will
 // be fed to the neural network as features. Currently it is a workaround
 // for the two-forward-pass sequence and ctc training, which allows
 // processing more utterances at the same time. Only used in Kaldi2Reader.
@@ -2427,6 +2428,11 @@ void SGD<ElemType>::UpdateWeights(Matrix<ElemType>& functionValues, Matrix<ElemT
                                                         (ElemType) m_rpi.inc, (ElemType) m_rpi.max,
                                                         (ElemType) m_rpi.dec, (ElemType) m_rpi.min, needAveMultiplier, true);
         Matrix<ElemType>::ScaleAndAdd((ElemType)(-learnRatePerSample / aveMultiplier), gradientValues, functionValues);
+    }
+    else if (adpType == GradientsUpdateType::Adam)
+    {
+        smoothedGradientValues.AdamUpdate(gradientValues, functionValues, smoothedCount + 1, learnRatePerSample,
+            m_adam.meanMomentum, m_adam.varMomentum, m_adam.epsilon, (ElemType)(1 - m_adam.meanMomentum), false);
     }
 
     if (noiseStd > 0)
@@ -2839,6 +2845,7 @@ static GradientsUpdateType ParseGradUpdateType(const wstring& s)
     else if (EqualCI(s, L"adagrad"))                 return GradientsUpdateType::AdaGrad;
     else if (EqualCI(s, L"rmsProp"))                 return GradientsUpdateType::RmsProp;
     else if (EqualCI(s, L"fsAdagrad"))               return GradientsUpdateType::FSAdaGrad;
+    else if (EqualCI(s, L"adam"))                    return GradientsUpdateType::Adam;
     // legacy, deprecated
     else if (EqualCI(s, L"normal") || EqualCI(s, L"simple")) return GradientsUpdateType::None;
     else InvalidArgument("ParseGradUpdateType: Invalid Gradient Updating Type. Valid values are (none | adagrad | rmsProp | fsAdagrad )");
@@ -2966,7 +2973,7 @@ SGDParams::SGDParams(const ConfigRecordType& configSGD, size_t sizeofElemType)
 
     // Parameters that control logging of training progress in TensorBoard.
     // Directory to create TensorBoard event files in. If empty (default), the progress is not logged as event files.
-    m_tensorBoardLogDir = msra::strfun::utf16(configSGD(L"tensorBoardLogDir", L""));
+    m_tensorBoardLogDir = static_cast<std::wstring>(configSGD(L"tensorBoardLogDir", L""));
     // Frequency at which to log intermediate training progress results. Used only when tensorBoardLogDir is not empty.
     // Setting this to 0 disables intermediate progress logging (only per-epoch loss/eval metric are logged).
     // Setting this to any other value (n) will log average loss/eval metric for each n minibatches.
@@ -3004,6 +3011,11 @@ SGDParams::SGDParams(const ConfigRecordType& configSGD, size_t sizeofElemType)
     m_rpi.min = configSGD(L"rms_wgt_min", 0.1);
     m_rpi.max = configSGD(L"rms_wgt_max", 10.0);
     m_rpi.gamma = configSGD(L"rms_gamma", 0.99);
+
+    // Adam settings
+    m_adam.meanMomentum = configSGD(L"adam_meanMomentum", 0.9);
+    m_adam.varMomentum = configSGD(L"adam_varMomentum", 0.999);
+    m_adam.epsilon = configSGD(L"adam_epsilon", pow(10, -8));
 
     m_needAveMultiplier = configSGD(L"normWithAveMultiplier", true);
     m_L2RegWeight = configSGD(L"L2RegWeight", 0.0);
